@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const mongoose = require('mongoose');
 const http = require('http');
 
@@ -48,7 +48,7 @@ async function updateTop10Roles(guild, top10Songs) {
 // --- OFFICIAL API SCRAPER ---
 async function getWebsiteTitle(url) {
     try {
-        // 1. YouTube Official API (Bypasses bot blocks)
+        // 1. YouTube Official API 
         if (url.includes('youtube.com') || url.includes('youtu.be')) {
             const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
             if (res.ok) {
@@ -57,7 +57,7 @@ async function getWebsiteTitle(url) {
             }
         }
 
-        // 2. Spotify Official API (Bypasses bot blocks)
+        // 2. Spotify Official API 
         if (url.includes('spotify.com')) {
             const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`);
             if (res.ok) {
@@ -66,7 +66,7 @@ async function getWebsiteTitle(url) {
             }
         }
 
-        // 3. SoundCloud Official API (Bypasses bot blocks)
+        // 3. SoundCloud Official API 
         if (url.includes('soundcloud.com')) {
             const res = await fetch(`https://soundcloud.com/oembed?url=${encodeURIComponent(url)}&format=json`);
             if (res.ok) {
@@ -75,7 +75,7 @@ async function getWebsiteTitle(url) {
             }
         }
 
-        // 4. Standard Fallback for any other random websites
+        // 4. Standard Fallback 
         const response = await fetch(url, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36' }
         });
@@ -115,6 +115,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
+
+    // --- LEADERBOARD COMMAND ---
     if (message.content.toLowerCase() === '!leaderboard') {
         const top10 = await Song.find().sort({ likes: -1 }).limit(10);
         if (top10.length === 0) return message.channel.send("No songs have been voted on yet!");
@@ -134,6 +136,38 @@ client.on('messageCreate', async (message) => {
         leaderboardEmbed.addFields(results);
         await message.channel.send({ embeds: [leaderboardEmbed] });
         await loadingMessage.delete();
+    }
+
+    // --- NEW: CLEAR COMMAND ---
+    if (message.content.toLowerCase().startsWith('!clear')) {
+        // 1. Check if the user is an Admin
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❌ You do not have permission to use this command.");
+        }
+
+        // 2. Extract the number from the message
+        const args = message.content.split(' ');
+        const amount = parseInt(args[1]);
+
+        // 3. Validate the number
+        if (isNaN(amount) || amount < 1 || amount > 100) {
+            return message.reply("Please provide a number between 1 and 100. (Example: `!clear 10`)");
+        }
+
+        try {
+            // 4. Delete the messages (+1 includes the !clear command itself, 'true' ignores 14-day old messages)
+            const deletedMessages = await message.channel.bulkDelete(amount + 1, true);
+            
+            // 5. Send a temporary confirmation message
+            const confirmation = await message.channel.send(`🧹 Successfully deleted ${deletedMessages.size - 1} messages.`);
+            
+            // Delete the confirmation message after 3 seconds so the channel stays completely clean
+            setTimeout(() => confirmation.delete().catch(() => {}), 3000);
+            
+        } catch (error) {
+            console.error("Clear command error:", error);
+            message.reply("There was an error trying to clear messages in this channel!");
+        }
     }
 });
 
