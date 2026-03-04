@@ -129,7 +129,7 @@ client.on('messageCreate', async (message) => {
 
         const results = await Promise.all(top10.map(async (song, i) => {
             const title = await getWebsiteTitle(song.url);
-            const rank = (i === 0) ? `💎 #1` : (i === 1) ? `🥇 #2` : (i === 2) ? `🥉 #3` : `▫️ #${i + 1}`;
+            const rank = (i === 0) ? `🥇 #1` : (i === 1) ? `🥈 #2` : (i === 2) ? `🥉 #3` : `▫️ #${i + 1}`;
             return { name: `${rank} - ${song.likes} Likes`, value: `[${title}](${song.url})\nPosted by: <@${song.userId}>` };
         }));
 
@@ -174,3 +174,4 @@ client.on('messageCreate', async (message) => {
 client.once('ready', () => console.log(`Bot is online as ${client.user.tag}`));
 client.login(BOT_TOKEN);
 http.createServer((req, res) => res.end('Bot is alive!')).listen(process.env.PORT || 3000);
+
