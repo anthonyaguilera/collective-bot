@@ -113,6 +113,32 @@ client.on('messageReactionAdd', async (reaction, user) => {
     }
 });
 
+// --- NEW: SWEEP MESSAGES WHEN USER LEAVES ---
+client.on('guildMemberRemove', async (member) => {
+    console.log(`User ${member.user.tag} left. Sweeping recent messages...`);
+    
+    // Check every single channel in the server
+    member.guild.channels.cache.forEach(async (channel) => {
+        // We only want to check text channels
+        if (channel.isTextBased()) {
+            try {
+                // Grab the most recent 100 messages in this channel
+                const messages = await channel.messages.fetch({ limit: 100 });
+                
+                // Filter down to only messages sent by the person who just left
+                const userMessages = messages.filter(msg => msg.author.id === member.id);
+                
+                if (userMessages.size > 0) {
+                    // Delete them all at once ('true' skips messages older than 14 days to prevent API crashes)
+                    await channel.bulkDelete(userMessages, true).catch(err => console.log(`Sweep error in ${channel.name}:`, err));
+                }
+            } catch (error) {
+                // Fails silently if the bot doesn't have permission to view a specific channel
+            }
+        }
+    });
+});
+
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
@@ -140,30 +166,21 @@ client.on('messageCreate', async (message) => {
 
     // --- CLEAR COMMAND (Anti-Glitch Version) ---
     if (message.content.toLowerCase().startsWith('!clear')) {
-        // 1. Check if the user is an Admin
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ You do not have permission to use this command.");
         }
 
-        // 2. Extract the number from the message
         const args = message.content.split(' ');
         const amount = parseInt(args[1]);
 
-        // 3. Validate the number (Capped at 99 so amount + command = 100 max)
         if (isNaN(amount) || amount < 1 || amount > 99) {
             return message.reply("Please provide a number between 1 and 99. (Example: `!clear 10`)");
         }
 
         try {
-            // 4. Bundle the deletion into one single action to prevent Discord ghost glitches
             const deletedMessages = await message.channel.bulkDelete(amount + 1, true);
-            
-            // 5. Send a temporary confirmation message
             const confirmation = await message.channel.send(`🧹 Successfully deleted ${deletedMessages.size - 1} messages.`);
-            
-            // Delete the confirmation message after 3 seconds
             setTimeout(() => confirmation.delete().catch(() => {}), 3000);
-            
         } catch (error) {
             console.error("Clear command error:", error);
             message.channel.send("There was an error trying to clear messages in this channel!").then(msg => {
