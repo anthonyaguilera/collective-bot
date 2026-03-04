@@ -45,35 +45,48 @@ async function updateTop10Roles(guild, top10Songs) {
     } catch (error) { console.error("Error updating roles:", error); }
 }
 
-// --- THE JSON-HUNTER SCRAPER (The final fix) ---
+// --- OFFICIAL API SCRAPER ---
 async function getWebsiteTitle(url) {
     try {
-        const response = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36' }
-        });
-        const html = await response.text();
-
-        // 1. YouTube specialized check (Hunts for the title inside their background JSON)
+        // 1. YouTube Official API (Bypasses bot blocks)
         if (url.includes('youtube.com') || url.includes('youtu.be')) {
-            const ytTitleMatch = html.match(/"title":\{"runs":\[\{"text":"(.*?)"\}\]/);
-            if (ytTitleMatch && ytTitleMatch[1]) {
-                return ytTitleMatch[1].replace(/\\u0026/g, '&');
+            const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+            if (res.ok) {
+                const data = await res.json();
+                return data.title;
             }
         }
 
-        // 2. Spotify/SoundCloud/Other check (Open Graph)
-        const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
-                        html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
-        
-        if (ogMatch && ogMatch[1]) {
-            return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+        // 2. Spotify Official API (Bypasses bot blocks)
+        if (url.includes('spotify.com')) {
+            const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`);
+            if (res.ok) {
+                const data = await res.json();
+                return data.title;
+            }
         }
 
-        // 3. Last Resort
-        const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-        if (titleMatch) {
-            return titleMatch[1].replace(/\s*-\s*YouTube/gi, '').replace(/YouTube/gi, '').trim();
+        // 3. SoundCloud Official API (Bypasses bot blocks)
+        if (url.includes('soundcloud.com')) {
+            const res = await fetch(`https://soundcloud.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+            if (res.ok) {
+                const data = await res.json();
+                return data.title;
+            }
         }
+
+        // 4. Standard Fallback for any other random websites
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36' }
+        });
+        const html = await response.text();
+
+        const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                        html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+        if (ogMatch && ogMatch[1]) return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+
+        const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+        if (titleMatch) return titleMatch[1].replace(/\s*-\s*YouTube/gi, '').replace(/YouTube/gi, '').trim();
 
         return "Click to Listen"; 
     } catch (e) {
