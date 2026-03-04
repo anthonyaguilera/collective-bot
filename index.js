@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.j
 const mongoose = require('mongoose');
 const http = require('http');
 
-// 👇 Hidden IDs - Handled via Render Environment Variables
+// IDs pulled from Render's Environment Variables for GitHub safety
 const TOP_10_ROLE_ID = '1478602391631696116'; 
 const MONGO_URI = process.env.MONGO_URI;
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -45,36 +45,48 @@ async function updateTop10Roles(guild, top10Songs) {
     } catch (error) { console.error("Error updating roles:", error); }
 }
 
-// --- THE RE-FIXED TITLE SCRAPER ---
+// --- THE ULTIMATE TITLE SCRAPER ---
 async function getWebsiteTitle(url) {
-    try {
-        const response = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36' },
-            signal: AbortSignal.timeout(5000) // Give it 5 seconds to respond
-        });
-        const html = await response.text();
-        
-        // Priority 1: Open Graph (Best for Spotify/YouTube)
-        const ogMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
-        if (ogMatch) {
-            return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
-        }
+    const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    ];
 
-        // Priority 2: Standard Title tag
-        const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-        if (titleMatch) {
-            let title = titleMatch[1]
-                .replace(/ - YouTube/gi, '')
-                .replace(/YouTube/gi, '')
-                .replace(/&amp;/g, '&')
-                .trim();
-            return title || "Click to Listen";
-        }
+    for (const agent of userAgents) {
+        try {
+            const response = await fetch(url, {
+                headers: { 'User-Agent': agent },
+                signal: AbortSignal.timeout(6000) // 6 second wait
+            });
+            const html = await response.text();
+            
+            // Look for the "og:title" which usually has the clean song name
+            const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                            html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+            
+            let finalTitle = "";
 
-        return "Click to Listen";
-    } catch (error) {
-        return "Click to Listen"; 
+            if (ogMatch && ogMatch[1]) {
+                finalTitle = ogMatch[1];
+            } else {
+                const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+                if (titleMatch) finalTitle = titleMatch[1];
+            }
+
+            if (finalTitle) {
+                // CLEANER: Strips out YouTube and other common junk text
+                return finalTitle
+                    .replace(/&amp;/g, '&')
+                    .replace(/&quot;/g, '"')
+                    .replace(/\s*-\s*YouTube/gi, '')
+                    .replace(/YouTube/gi, '')
+                    .replace(/\|\s*Spotify/gi, '')
+                    .trim();
+            }
+        } catch (e) { continue; } // Try the next User-Agent if one fails
     }
+    return "Click to Listen"; 
 }
 
 client.on('messageReactionAdd', async (reaction, user) => {
@@ -108,21 +120,14 @@ client.on('messageCreate', async (message) => {
             .setColor('#FF0000') 
             .setTimestamp();
 
-        // Use Promise.all so we fetch all titles at once instead of one-by-one
-        const leaderboardData = await Promise.all(top10.map(async (song, i) => {
+        // Process all titles in parallel for speed
+        const results = await Promise.all(top10.map(async (song, i) => {
             const title = await getWebsiteTitle(song.url);
-            let rankDisplay = (i === 0) ? `💎 #1` : (i === 1) ? `🥇 #2` : (i === 2) ? `🥉 #3` : `▫️ #${i + 1}`;
-            return { rankDisplay, likes: song.likes, title, url: song.url, userId: song.userId };
+            const rank = (i === 0) ? `💎 #1` : (i === 1) ? `🥇 #2` : (i === 2) ? `🥉 #3` : `▫️ #${i + 1}`;
+            return { name: `${rank} - ${song.likes} Likes`, value: `[${title}](${song.url})\nPosted by: <@${song.userId}>` };
         }));
 
-        leaderboardData.forEach(data => {
-            leaderboardEmbed.addFields({ 
-                name: `${data.rankDisplay} - ${data.likes} Likes`, 
-                value: `[${data.title}](${data.url})\nPosted by: <@${data.userId}>`, 
-                inline: false 
-            });
-        });
-
+        leaderboardEmbed.addFields(results);
         await message.channel.send({ embeds: [leaderboardEmbed] });
         await loadingMessage.delete();
     }
