@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.j
 const mongoose = require('mongoose');
 const http = require('http');
 
-// 👇 Passwords are now hidden! The code pulls them from Render's secure vault 👇
+// 👇 Passwords are hidden for GitHub safety - pulled from Render's Environment Variables 👇
 const TOP_10_ROLE_ID = '1478602391631696116'; 
 const MONGO_URI = process.env.MONGO_URI;
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -18,6 +18,7 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
+// --- CLOUD DATABASE SETUP ---
 mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Connected to MongoDB Cloud Database!'))
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
@@ -29,8 +30,9 @@ const songSchema = new mongoose.Schema({
 });
 const Song = mongoose.model('Song', songSchema);
 
+// --- AUTOMATED ROLE MANAGEMENT ---
 async function updateTop10Roles(guild, top10Songs) {
-    if (TOP_10_ROLE_ID === 'YOUR_TOP_10_ROLE_ID_HERE') return; 
+    if (!TOP_10_ROLE_ID || TOP_10_ROLE_ID === 'YOUR_TOP_10_ROLE_ID_HERE') return; 
 
     try {
         const role = await guild.roles.fetch(TOP_10_ROLE_ID);
@@ -56,23 +58,37 @@ async function updateTop10Roles(guild, top10Songs) {
     }
 }
 
+// --- UPGRADED TITLE SCRAPER (Fixes the "YouTube" cut-off issue) ---
 async function getWebsiteTitle(url) {
     try {
-        const response = await fetch(url);
+        // Spoofing a browser User-Agent so music sites don't block the bot
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+        });
         const html = await response.text();
         
-        const ogMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
-        if (ogMatch) return ogMatch[1].replace(/&amp;/g, '&');
+        // 1. Check for Open Graph / Twitter titles (used by Spotify, YouTube, SoundCloud)
+        const ogMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i) || 
+                        html.match(/<meta\s+name="twitter:title"\s+content="([^"]+)"/i);
+        
+        if (ogMatch) {
+            return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+        }
 
+        // 2. Fallback to standard HTML title tag
         const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-        if (titleMatch) return titleMatch[1].replace(/&amp;/g, '&');
+        if (titleMatch) {
+            let title = titleMatch[1].replace(/ - YouTube/i, '').replace(/&amp;/g, '&');
+            return title.trim();
+        }
 
-        return url; 
+        return "Click to Listen"; 
     } catch (error) {
-        return url; 
+        return "Click to Listen"; 
     }
 }
 
+// 1. Listening for Reactions (Updates likes in MongoDB)
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
     if (reaction.message.channel.name !== 'promote-music') return;
@@ -99,6 +115,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     }
 });
 
+// 2. Listening for Commands (Generates the Leaderboard)
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
@@ -109,7 +126,7 @@ client.on('messageCreate', async (message) => {
             return message.channel.send("No songs have been voted on yet!");
         }
 
-        const loadingMessage = await message.channel.send("⏳ Fetching the Collective Leaderboard from the cloud...");
+        const loadingMessage = await message.channel.send("⏳ Fetching the Collective Leaderboard...");
 
         const leaderboardEmbed = new EmbedBuilder()
             .setTitle('🏆 Collective Leaderboard')
@@ -145,4 +162,5 @@ client.once('ready', () => {
 
 client.login(BOT_TOKEN);
 
+// DUMMY SERVER FOR RENDER (Keeps the bot from sleeping)
 http.createServer((req, res) => res.end('Bot is alive!')).listen(process.env.PORT || 3000);
