@@ -57,7 +57,7 @@ async function getWebsiteTitle(url) {
             }
         }
 
-        // 2. Spotify Official API (Fixed to the correct official endpoint!)
+        // 2. Spotify Official API 
         if (url.includes('spotify.com')) {
             const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`);
             if (res.ok) {
@@ -83,7 +83,7 @@ async function getWebsiteTitle(url) {
 
         const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
-        if (ogMatch && ogMatch[1]) return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+        if (ogMatch && ogMatch[1]) return ogMatch[1].replace(/&/g, '&').replace(/"/g, '"').trim();
 
         const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
         if (titleMatch) return titleMatch[1].replace(/\s*-\s*YouTube/gi, '').replace(/YouTube/gi, '').trim();
@@ -138,7 +138,7 @@ client.on('messageCreate', async (message) => {
         await loadingMessage.delete();
     }
 
-    // --- CLEAR COMMAND ---
+    // --- CLEAR COMMAND (Anti-Glitch Version) ---
     if (message.content.toLowerCase().startsWith('!clear')) {
         // 1. Check if the user is an Admin
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -149,27 +149,23 @@ client.on('messageCreate', async (message) => {
         const args = message.content.split(' ');
         const amount = parseInt(args[1]);
 
-        // 3. Validate the number
-        if (isNaN(amount) || amount < 1 || amount > 100) {
-            return message.reply("Please provide a number between 1 and 100. (Example: `!clear 10`)");
+        // 3. Validate the number (Capped at 99 so amount + command = 100 max)
+        if (isNaN(amount) || amount < 1 || amount > 99) {
+            return message.reply("Please provide a number between 1 and 99. (Example: `!clear 10`)");
         }
 
         try {
-            // 4. Explicitly delete the admin's command message first
-            await message.delete().catch(() => {});
-
-            // 5. Delete the requested amount of messages ('true' ignores 14-day old messages to prevent crashes)
-            const deletedMessages = await message.channel.bulkDelete(amount, true);
+            // 4. Bundle the deletion into one single action to prevent Discord ghost glitches
+            const deletedMessages = await message.channel.bulkDelete(amount + 1, true);
             
-            // 6. Send a temporary confirmation message
-            const confirmation = await message.channel.send(`🧹 Successfully deleted ${deletedMessages.size} messages.`);
+            // 5. Send a temporary confirmation message
+            const confirmation = await message.channel.send(`🧹 Successfully deleted ${deletedMessages.size - 1} messages.`);
             
-            // Delete the confirmation message after 3 seconds so the channel stays completely clean
+            // Delete the confirmation message after 3 seconds
             setTimeout(() => confirmation.delete().catch(() => {}), 3000);
             
         } catch (error) {
             console.error("Clear command error:", error);
-            // Switched to channel.send here since the original message is already deleted
             message.channel.send("There was an error trying to clear messages in this channel!").then(msg => {
                 setTimeout(() => msg.delete().catch(() => {}), 3000);
             });
