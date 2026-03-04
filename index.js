@@ -57,9 +57,9 @@ async function getWebsiteTitle(url) {
             }
         }
 
-        // 2. Spotify Official API 
+        // 2. Spotify Official API (Fixed to the correct official endpoint!)
         if (url.includes('spotify.com')) {
-            const res = await fetch(`https://open.spotify.com/oembed?url=$${encodeURIComponent(url)}`);
+            const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`);
             if (res.ok) {
                 const data = await res.json();
                 return data.title;
@@ -83,7 +83,7 @@ async function getWebsiteTitle(url) {
 
         const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
-        if (ogMatch && ogMatch[1]) return ogMatch[1].replace(/&/g, '&').replace(/"/g, '"').trim();
+        if (ogMatch && ogMatch[1]) return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
 
         const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
         if (titleMatch) return titleMatch[1].replace(/\s*-\s*YouTube/gi, '').replace(/YouTube/gi, '').trim();
@@ -138,7 +138,7 @@ client.on('messageCreate', async (message) => {
         await loadingMessage.delete();
     }
 
-    // --- NEW: CLEAR COMMAND ---
+    // --- CLEAR COMMAND ---
     if (message.content.toLowerCase().startsWith('!clear')) {
         // 1. Check if the user is an Admin
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
