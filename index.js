@@ -59,7 +59,7 @@ async function getWebsiteTitle(url) {
 
         // 2. Spotify Official API 
         if (url.includes('spotify.com')) {
-            const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`);
+            const res = await fetch(`https://open.spotify.com/oembed?url=$${encodeURIComponent(url)}`);
             if (res.ok) {
                 const data = await res.json();
                 return data.title;
@@ -83,7 +83,7 @@ async function getWebsiteTitle(url) {
 
         const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
                         html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
-        if (ogMatch && ogMatch[1]) return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+        if (ogMatch && ogMatch[1]) return ogMatch[1].replace(/&/g, '&').replace(/"/g, '"').trim();
 
         const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
         if (titleMatch) return titleMatch[1].replace(/\s*-\s*YouTube/gi, '').replace(/YouTube/gi, '').trim();
@@ -155,18 +155,24 @@ client.on('messageCreate', async (message) => {
         }
 
         try {
-            // 4. Delete the messages (+1 includes the !clear command itself, 'true' ignores 14-day old messages)
-            const deletedMessages = await message.channel.bulkDelete(amount + 1, true);
+            // 4. Explicitly delete the admin's command message first
+            await message.delete().catch(() => {});
+
+            // 5. Delete the requested amount of messages ('true' ignores 14-day old messages to prevent crashes)
+            const deletedMessages = await message.channel.bulkDelete(amount, true);
             
-            // 5. Send a temporary confirmation message
-            const confirmation = await message.channel.send(`🧹 Successfully deleted ${deletedMessages.size - 1} messages.`);
+            // 6. Send a temporary confirmation message
+            const confirmation = await message.channel.send(`🧹 Successfully deleted ${deletedMessages.size} messages.`);
             
             // Delete the confirmation message after 3 seconds so the channel stays completely clean
             setTimeout(() => confirmation.delete().catch(() => {}), 3000);
             
         } catch (error) {
             console.error("Clear command error:", error);
-            message.reply("There was an error trying to clear messages in this channel!");
+            // Switched to channel.send here since the original message is already deleted
+            message.channel.send("There was an error trying to clear messages in this channel!").then(msg => {
+                setTimeout(() => msg.delete().catch(() => {}), 3000);
+            });
         }
     }
 });
@@ -174,4 +180,3 @@ client.on('messageCreate', async (message) => {
 client.once('ready', () => console.log(`Bot is online as ${client.user.tag}`));
 client.login(BOT_TOKEN);
 http.createServer((req, res) => res.end('Bot is alive!')).listen(process.env.PORT || 3000);
-
