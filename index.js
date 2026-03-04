@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.j
 const mongoose = require('mongoose');
 const http = require('http');
 
-// IDs pulled from Render's Environment Variables for GitHub safety
+// IDs pulled from Render's Environment Variables
 const TOP_10_ROLE_ID = '1478602391631696116'; 
 const MONGO_URI = process.env.MONGO_URI;
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -45,48 +45,40 @@ async function updateTop10Roles(guild, top10Songs) {
     } catch (error) { console.error("Error updating roles:", error); }
 }
 
-// --- THE ULTIMATE TITLE SCRAPER ---
+// --- THE JSON-HUNTER SCRAPER (The final fix) ---
 async function getWebsiteTitle(url) {
-    const userAgents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    ];
+    try {
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36' }
+        });
+        const html = await response.text();
 
-    for (const agent of userAgents) {
-        try {
-            const response = await fetch(url, {
-                headers: { 'User-Agent': agent },
-                signal: AbortSignal.timeout(6000) // 6 second wait
-            });
-            const html = await response.text();
-            
-            // Look for the "og:title" which usually has the clean song name
-            const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
-                            html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
-            
-            let finalTitle = "";
-
-            if (ogMatch && ogMatch[1]) {
-                finalTitle = ogMatch[1];
-            } else {
-                const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-                if (titleMatch) finalTitle = titleMatch[1];
+        // 1. YouTube specialized check (Hunts for the title inside their background JSON)
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+            const ytTitleMatch = html.match(/"title":\{"runs":\[\{"text":"(.*?)"\}\]/);
+            if (ytTitleMatch && ytTitleMatch[1]) {
+                return ytTitleMatch[1].replace(/\\u0026/g, '&');
             }
+        }
 
-            if (finalTitle) {
-                // CLEANER: Strips out YouTube and other common junk text
-                return finalTitle
-                    .replace(/&amp;/g, '&')
-                    .replace(/&quot;/g, '"')
-                    .replace(/\s*-\s*YouTube/gi, '')
-                    .replace(/YouTube/gi, '')
-                    .replace(/\|\s*Spotify/gi, '')
-                    .trim();
-            }
-        } catch (e) { continue; } // Try the next User-Agent if one fails
+        // 2. Spotify/SoundCloud/Other check (Open Graph)
+        const ogMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                        html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+        
+        if (ogMatch && ogMatch[1]) {
+            return ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+        }
+
+        // 3. Last Resort
+        const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+        if (titleMatch) {
+            return titleMatch[1].replace(/\s*-\s*YouTube/gi, '').replace(/YouTube/gi, '').trim();
+        }
+
+        return "Click to Listen"; 
+    } catch (e) {
+        return "Click to Listen"; 
     }
-    return "Click to Listen"; 
 }
 
 client.on('messageReactionAdd', async (reaction, user) => {
@@ -120,7 +112,6 @@ client.on('messageCreate', async (message) => {
             .setColor('#FF0000') 
             .setTimestamp();
 
-        // Process all titles in parallel for speed
         const results = await Promise.all(top10.map(async (song, i) => {
             const title = await getWebsiteTitle(song.url);
             const rank = (i === 0) ? `💎 #1` : (i === 1) ? `🥇 #2` : (i === 2) ? `🥉 #3` : `▫️ #${i + 1}`;
